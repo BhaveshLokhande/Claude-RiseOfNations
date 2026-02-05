@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rise of Empires - Strategy Game</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            overflow-x: hidden;
+        }
+        #root {
+            min-height: 100vh;
+        }
+        
+        /* Animation keyframes */
+        @keyframes workerMove {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(10px); }
+        }
+        
+        @keyframes hammer {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(-20deg); }
+        }
+        
+        @keyframes gather {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        @keyframes troopMarch {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(100%); }
+        }
+        
+        @keyframes buildingConstruct {
+            0% { opacity: 0.3; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+        
+        .worker-animated {
+            animation: workerMove 2s ease-in-out infinite;
+        }
+        
+        .hammer-animated {
+            animation: hammer 1s ease-in-out infinite;
+        }
+        
+        .gather-animated {
+            animation: gather 1.5s ease-in-out infinite;
+        }
+        
+        .troop-march {
+            animation: troopMarch 4s linear infinite;
+        }
+        
+        .building-construct {
+            animation: buildingConstruct 0.5s ease-out;
+        }
+        
+        .resource-pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        /* Hexagon map styles */
+        .hex-grid {
+            display: flex;
+            flex-wrap: wrap;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .hex-row {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        
+        .hex {
+            width: 60px;
+            height: 52px;
+            position: relative;
+            margin: 2px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .hex:hover {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        
+        .hex-inner {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+            font-size: 10px;
+            font-weight: bold;
+            position: relative;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .hex-owned {
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.6);
+        }
+        
+        .hex-neutral {
+            opacity: 0.6;
+        }
+        
+        .troop-icon {
+            position: absolute;
+            font-size: 16px;
+            z-index: 5;
+        }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['Georgia', 'Times New Roman', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Simple sound effect system using Web Audio API
+        const SoundManager = {
+            audioContext: null,
+            
+            init() {
+                if (!this.audioContext) {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
+            
+            playTone(frequency, duration, type = 'sine') {
+                this.init();
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+                
+                oscillator.frequency.value = frequency;
+                oscillator.type = type;
+                
+                gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+                
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + duration);
+            },
+            
+            buildSound() {
+                this.playTone(400, 0.2, 'square');
+                setTimeout(() => this.playTone(500, 0.2, 'square'), 100);
+            },
+            
+            trainSound() {
+                this.playTone(300, 0.15, 'triangle');
+                setTimeout(() => this.playTone(350, 0.15, 'triangle'), 80);
+                setTimeout(() => this.playTone(400, 0.15, 'triangle'), 160);
+            },
+            
+            resourceSound() {
+                this.playTone(600, 0.1, 'sine');
+            },
+            
+            expandSound() {
+                this.playTone(250, 0.3, 'sawtooth');
+                setTimeout(() => this.playTone(350, 0.3, 'sawtooth'), 150);
+            },
+            
+            victorySound() {
+                this.playTone(523, 0.2);
+                setTimeout(() => this.playTone(659, 0.2), 200);
+                setTimeout(() => this.playTone(784, 0.4), 400);
+            }
+        };
+
+        // Icon components as SVG
+        const Crown = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 12l3-3 5 5 5-5 3 3v7H2v-7z"/><path d="M12 2v8"/>
+            </svg>
+        );
+        
+        const Sword = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/>
+            </svg>
+        );
+        
+        const Users = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+        );
+        
+        const Hammer = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m15 12-8.5 8.5c-.83.83-2.17.83-3 0 0 0 0 0 0 0a2.12 2.12 0 0 1 0-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>
+            </svg>
+        );
+        
+        const Book = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+        );
+        
+        const Trees = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 13v8"/><path d="M12 3v3"/><path d="m9 8-3 3h12l-3-3"/><path d="M6 14h.01"/><path d="M18 14h.01"/><path d="m9 21 3-3 3 3"/>
+            </svg>
+        );
+        
+        const Wheat = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 22 16 8"/><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+            </svg>
+        );
+        
+        const Coins = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>
+            </svg>
+        );
+        
+        const Flag = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+            </svg>
+        );
+        
+        const Shield = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+        );
+        
+        const ChevronUp = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="18 15 12 9 6 15"/>
+            </svg>
+        );
+        
+        const Map = (props) => (
+            <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+                <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+            </svg>
+        );
+
+        // Map Component
+        const MapView = ({ territory, nation, units }) => {
+            const mapSize = 7;
+            const totalTiles = mapSize * mapSize;
+            const ownedTiles = Math.min(territory, totalTiles);
+            
+            const tiles = [];
+            for (let i = 0; i < totalTiles; i++) {
+                tiles.push({
+                    id: i,
+                    owned: i < ownedTiles,
+                    hasTroops: i < ownedTiles && Math.random() > 0.7
+                });
+            }
+            
+            return (
+                <div className="w-full">
+                    <div className="hex-grid">
+                        {Array.from({ length: mapSize }).map((_, rowIndex) => (
+                            <div key={rowIndex} className="hex-row" style={{ marginLeft: rowIndex % 2 === 1 ? '31px' : '0' }}>
+                                {Array.from({ length: mapSize }).map((_, colIndex) => {
+                                    const tileIndex = rowIndex * mapSize + colIndex;
+                                    const tile = tiles[tileIndex];
+                                    
+                                    return (
+                                        <div key={tileIndex} className="hex">
+                                            <div 
+                                                className={`hex-inner ${tile.owned ? 'hex-owned' : 'hex-neutral'}`}
+                                                style={{
+                                                    background: tile.owned 
+                                                        ? `linear-gradient(135deg, ${nation?.color || '#666'}, ${nation?.color || '#666'}dd)`
+                                                        : 'linear-gradient(135deg, #444, #333)'
+                                                }}
+                                            >
+                                                {tile.owned && (
+                                                    <span className="text-white text-xs">
+                                                        {tile.hasTroops && '⚔️'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // Animated Workers Component
+        const AnimatedWorkers = ({ count, type }) => {
+            const icons = {
+                farm: '🌾',
+                lumber: '🪓',
+                mine: '⛏️',
+                build: '🔨'
+            };
+            
+            return (
+                <div className="flex gap-1 flex-wrap">
+                    {Array.from({ length: Math.min(count, 5) }).map((_, i) => (
+                        <span 
+                            key={i} 
+                            className={type === 'build' ? 'hammer-animated' : 'gather-animated'}
+                            style={{ animationDelay: `${i * 0.2}s` }}
+                        >
+                            {icons[type] || '👷'}
+                        </span>
+                    ))}
+                </div>
+            );
+        };
+
+        const RiseOfNationsGame = () => {
+            const [gameState, setGameState] = useState({
+                nation: null,
+                age: 'Ancient',
+                resources: { food: 200, wood: 200, gold: 100, knowledge: 0 },
+                population: { current: 3, max: 10 },
+                territory: 1,
+                units: { citizens: 3, soldiers: 0, archers: 0, cavalry: 0 },
+                buildings: { townCenter: 1, farm: 0, lumberMill: 0, barracks: 0, library: 0, market: 0 },
+                tick: 0,
+                gameSpeed: 1,
+                notifications: [],
+                soundEnabled: true
+            });
+
+            const [gameStarted, setGameStarted] = useState(false);
+            const [selectedTab, setSelectedTab] = useState('map');
+            const [showWorkers, setShowWorkers] = useState(true);
+
+            const nations = {
+                Romans: {
+                    name: 'Romans',
+                    bonus: '+20% soldier strength',
+                    color: '#8B0000',
+                    unitBonus: { soldiers: 1.2 }
+                },
+                Greeks: {
+                    name: 'Greeks',
+                    bonus: '+30% knowledge gain',
+                    color: '#1E40AF',
+                    resourceBonus: { knowledge: 1.3 }
+                },
+                Egyptians: {
+                    name: 'Egyptians',
+                    bonus: '+25% building speed',
+                    color: '#D97706',
+                    buildBonus: 1.25
+                },
+                Chinese: {
+                    name: 'Chinese',
+                    bonus: '+15% all resources',
+                    color: '#DC2626',
+                    resourceBonus: { food: 1.15, wood: 1.15, gold: 1.15, knowledge: 1.15 }
+                },
+                Mongols: {
+                    name: 'Mongols',
+                    bonus: '+30% cavalry strength',
+                    color: '#059669',
+                    unitBonus: { cavalry: 1.3 }
+                },
+                British: {
+                    name: 'British',
+                    bonus: '+25% archer range',
+                    color: '#7C3AED',
+                    unitBonus: { archers: 1.25 }
+                }
+            };
+
+            const ages = ['Ancient', 'Classical', 'Medieval', 'Gunpowder', 'Enlightenment', 'Industrial', 'Modern'];
+
+            const buildings = {
+                farm: { name: 'Farm', cost: { wood: 50, food: 20 }, produces: { food: 5 }, Icon: Wheat, workerType: 'farm' },
+                lumberMill: { name: 'Lumber Mill', cost: { wood: 40, food: 30 }, produces: { wood: 4 }, Icon: Trees, workerType: 'lumber' },
+                barracks: { name: 'Barracks', cost: { wood: 100, gold: 50 }, produces: {}, Icon: Shield, workerType: 'build' },
+                library: { name: 'Library', cost: { wood: 80, gold: 60 }, produces: { knowledge: 2 }, Icon: Book, workerType: 'build' },
+                market: { name: 'Market', cost: { wood: 75, gold: 100 }, produces: { gold: 3 }, Icon: Coins, workerType: 'mine' }
+            };
+
+            const units = {
+                citizens: { name: 'Citizen', cost: { food: 50 }, Icon: Users },
+                soldiers: { name: 'Soldier', cost: { food: 60, gold: 40 }, strength: 10, Icon: Sword },
+                archers: { name: 'Archer', cost: { food: 50, wood: 30, gold: 35 }, strength: 8, Icon: Flag },
+                cavalry: { name: 'Cavalry', cost: { food: 80, wood: 20, gold: 60 }, strength: 15, Icon: Crown }
+            };
+
+            useEffect(() => {
+                if (!gameStarted || !gameState.nation) return;
+
+                const interval = setInterval(() => {
+                    setGameState(prev => {
+                        const newResources = { ...prev.resources };
+                        const nation = nations[prev.nation];
+
+                        const farmProduction = prev.buildings.farm * (buildings.farm.produces.food || 0);
+                        const woodProduction = prev.buildings.lumberMill * (buildings.lumberMill.produces.wood || 0);
+                        const goldProduction = prev.buildings.market * (buildings.market.produces.gold || 0);
+                        const knowledgeProduction = prev.buildings.library * (buildings.library.produces.knowledge || 0);
+
+                        const foodBonus = nation.resourceBonus?.food || 1;
+                        const woodBonus = nation.resourceBonus?.wood || 1;
+                        const goldBonus = nation.resourceBonus?.gold || 1;
+                        const knowledgeBonus = nation.resourceBonus?.knowledge || 1;
+
+                        const oldFood = newResources.food;
+                        newResources.food += (farmProduction + prev.units.citizens * 0.5) * foodBonus;
+                        newResources.wood += (woodProduction + prev.units.citizens * 0.3) * woodBonus;
+                        newResources.gold += (goldProduction + prev.units.citizens * 0.2) * goldBonus;
+                        newResources.knowledge += knowledgeProduction * knowledgeBonus;
+
+                        // Play resource sound occasionally
+                        if (prev.soundEnabled && Math.floor(oldFood / 50) < Math.floor(newResources.food / 50)) {
+                            SoundManager.resourceSound();
+                        }
+
+                        let newAge = prev.age;
+                        let newNotifications = [...prev.notifications];
+                        const currentAgeIndex = ages.indexOf(prev.age);
+
+                        if (currentAgeIndex < ages.length - 1) {
+                            const knowledgeRequired = (currentAgeIndex + 1) * 500;
+                            if (newResources.knowledge >= knowledgeRequired && prev.buildings.library > 0) {
+                                newAge = ages[currentAgeIndex + 1];
+                                newNotifications.push(`Advanced to ${newAge} Age!`);
+                                if (prev.soundEnabled) SoundManager.victorySound();
+                                if (newNotifications.length > 3) newNotifications.shift();
+                            }
+                        }
+
+                        return {
+                            ...prev,
+                            resources: newResources,
+                            tick: prev.tick + 1,
+                            age: newAge,
+                            notifications: newNotifications
+                        };
+                    });
+                }, 1000 / gameState.gameSpeed);
+
+                return () => clearInterval(interval);
+            }, [gameStarted, gameState.gameSpeed, gameState.nation]);
+
+            const startGame = (nationKey) => {
+                setGameState(prev => ({ ...prev, nation: nationKey }));
+                setGameStarted(true);
+                SoundManager.init();
+            };
+
+            const buildBuilding = (buildingType) => {
+                const building = buildings[buildingType];
+                const canAfford = Object.entries(building.cost).every(
+                    ([resource, cost]) => gameState.resources[resource] >= cost
+                );
+
+                if (canAfford) {
+                    if (gameState.soundEnabled) SoundManager.buildSound();
+                    
+                    setGameState(prev => {
+                        const newResources = { ...prev.resources };
+                        Object.entries(building.cost).forEach(([resource, cost]) => {
+                            newResources[resource] -= cost;
+                        });
+
+                        return {
+                            ...prev,
+                            resources: newResources,
+                            buildings: { ...prev.buildings, [buildingType]: prev.buildings[buildingType] + 1 },
+                            notifications: [...prev.notifications, `${building.name} constructed!`].slice(-3)
+                        };
+                    });
+                }
+            };
+
+            const trainUnit = (unitType) => {
+                const unit = units[unitType];
+                const canAfford = Object.entries(unit.cost).every(
+                    ([resource, cost]) => gameState.resources[resource] >= cost
+                );
+
+                if (canAfford && gameState.population.current < gameState.population.max) {
+                    if (gameState.soundEnabled) SoundManager.trainSound();
+                    
+                    setGameState(prev => {
+                        const newResources = { ...prev.resources };
+                        Object.entries(unit.cost).forEach(([resource, cost]) => {
+                            newResources[resource] -= cost;
+                        });
+
+                        return {
+                            ...prev,
+                            resources: newResources,
+                            units: { ...prev.units, [unitType]: prev.units[unitType] + 1 },
+                            population: { ...prev.population, current: prev.population.current + 1 },
+                            notifications: [...prev.notifications, `${unit.name} trained!`].slice(-3)
+                        };
+                    });
+                }
+            };
+
+            const expandTerritory = () => {
+                const cost = gameState.territory * 100;
+                if (gameState.resources.gold >= cost) {
+                    if (gameState.soundEnabled) SoundManager.expandSound();
+                    
+                    setGameState(prev => ({
+                        ...prev,
+                        resources: { ...prev.resources, gold: prev.resources.gold - cost },
+                        territory: prev.territory + 1,
+                        population: { ...prev.population, max: prev.population.max + 5 },
+                        notifications: [...prev.notifications, 'Territory expanded!'].slice(-3)
+                    }));
+                }
+            };
+
+            const toggleSound = () => {
+                setGameState(prev => ({ ...prev, soundEnabled: !prev.soundEnabled }));
+            };
+
+            if (!gameStarted) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-amber-900 via-stone-800 to-slate-900 p-8 font-serif">
+                        <div className="max-w-6xl mx-auto">
+                            <div className="text-center mb-12">
+                                <h1 className="text-7xl font-bold mb-4 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 bg-clip-text text-transparent tracking-wider drop-shadow-2xl">
+                                    RISE OF EMPIRES
+                                </h1>
+                                <p className="text-2xl text-amber-200 italic tracking-wide">Forge Your Destiny Through the Ages</p>
+                                <p className="text-sm text-amber-400 mt-2">✨ Now with Map View, Sound Effects & Animations! ✨</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {Object.entries(nations).map(([key, nation]) => (
+                                    <div
+                                        key={key}
+                                        onClick={() => startGame(key)}
+                                        className="group cursor-pointer bg-gradient-to-b from-stone-800 to-stone-900 border-4 hover:border-amber-500 border-amber-700 rounded-lg p-6 transform hover:scale-105 transition-all duration-300 hover:shadow-2xl hover:shadow-amber-500/50"
+                                        style={{ borderColor: nation.color }}
+                                    >
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Crown className="w-10 h-10" style={{ color: nation.color }} />
+                                            <h2 className="text-3xl font-bold text-amber-100">{nation.name}</h2>
+                                        </div>
+                                        <div className="text-amber-300 bg-black/30 rounded p-3 border border-amber-700/50">
+                                            <p className="text-sm mb-1 text-amber-500 font-semibold">SPECIAL ABILITY:</p>
+                                            <p className="text-base">{nation.bonus}</p>
+                                        </div>
+                                        <div className="mt-4 text-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                            <span className="text-amber-400 font-bold tracking-wide">⚔ SELECT NATION ⚔</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            const nation = nations[gameState.nation];
+            const currentAgeIndex = ages.indexOf(gameState.age);
+            const nextAge = ages[currentAgeIndex + 1];
+            const knowledgeForNextAge = (currentAgeIndex + 1) * 500;
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-stone-900 to-amber-950 text-amber-50 p-4 font-serif">
+                    <div className="bg-gradient-to-r from-amber-900/80 to-stone-900/80 border-2 border-amber-600 rounded-lg p-4 mb-4 backdrop-blur-sm">
+                        <div className="flex justify-between items-center flex-wrap gap-4">
+                            <div className="flex items-center gap-3">
+                                <Crown className="w-8 h-8" style={{ color: nation.color }} />
+                                <div>
+                                    <h1 className="text-2xl font-bold text-amber-100">{nation.name}</h1>
+                                    <p className="text-sm text-amber-400">{nation.bonus}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded border border-amber-700">
+                                <ChevronUp className="w-5 h-5 text-amber-400" />
+                                <div>
+                                    <p className="text-xs text-amber-500">AGE</p>
+                                    <p className="font-bold text-amber-200">{gameState.age}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 text-sm">
+                                <div className="flex items-center gap-2 bg-green-900/50 px-3 py-1 rounded border border-green-600 resource-pulse">
+                                    <Wheat className="w-4 h-4" />
+                                    <span className="font-bold">{Math.floor(gameState.resources.food)}</span>
+                                </div>
+                                <div className="flex items-center gap-2 bg-amber-900/50 px-3 py-1 rounded border border-amber-600 resource-pulse" style={{animationDelay: '0.5s'}}>
+                                    <Trees className="w-4 h-4" />
+                                    <span className="font-bold">{Math.floor(gameState.resources.wood)}</span>
+                                </div>
+                                <div className="flex items-center gap-2 bg-yellow-900/50 px-3 py-1 rounded border border-yellow-600 resource-pulse" style={{animationDelay: '1s'}}>
+                                    <Coins className="w-4 h-4" />
+                                    <span className="font-bold">{Math.floor(gameState.resources.gold)}</span>
+                                </div>
+                                <div className="flex items-center gap-2 bg-blue-900/50 px-3 py-1 rounded border border-blue-600 resource-pulse" style={{animationDelay: '1.5s'}}>
+                                    <Book className="w-4 h-4" />
+                                    <span className="font-bold">{Math.floor(gameState.resources.knowledge)}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 bg-purple-900/50 px-3 py-2 rounded border border-purple-600">
+                                <Users className="w-5 h-5" />
+                                <span className="font-bold">{gameState.population.current}/{gameState.population.max}</span>
+                            </div>
+                        </div>
+
+                        {gameState.notifications.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                                {gameState.notifications.map((notif, idx) => (
+                                    <div key={idx} className="text-sm text-amber-300 bg-black/40 px-3 py-1 rounded border border-amber-700/50 animate-pulse">
+                                        ⚡ {notif}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="space-y-4">
+                            <div className="bg-gradient-to-br from-stone-800/90 to-stone-900/90 border-2 border-amber-600 rounded-lg p-4 backdrop-blur-sm">
+                                <h2 className="text-xl font-bold mb-3 text-amber-300 flex items-center gap-2">
+                                    <Flag className="w-5 h-5" />
+                                    Territory Control
+                                </h2>
+                                <div className="text-center mb-4">
+                                    <p className="text-4xl font-bold text-amber-400">{gameState.territory}</p>
+                                    <p className="text-sm text-amber-500">Provinces Controlled</p>
+                                </div>
+                                <button
+                                    onClick={expandTerritory}
+                                    disabled={gameState.resources.gold < gameState.territory * 100}
+                                    className="w-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-3 px-4 rounded border-2 border-amber-800 disabled:border-gray-800 transition-all duration-200 transform hover:scale-105 disabled:scale-100"
+                                >
+                                    Expand Territory ({gameState.territory * 100} Gold)
+                                </button>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-blue-900/90 to-indigo-900/90 border-2 border-blue-600 rounded-lg p-4 backdrop-blur-sm">
+                                <h2 className="text-xl font-bold mb-3 text-blue-300 flex items-center gap-2">
+                                    <Book className="w-5 h-5" />
+                                    Age Advancement
+                                </h2>
+                                {nextAge ? (
+                                    <div>
+                                        <div className="mb-3">
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="text-blue-400">Progress to {nextAge}</span>
+                                                <span className="text-blue-300">{Math.floor(gameState.resources.knowledge)}/{knowledgeForNextAge}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden border border-blue-800">
+                                                <div
+                                                    className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full transition-all duration-300"
+                                                    style={{ width: `${Math.min((gameState.resources.knowledge / knowledgeForNextAge) * 100, 100)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                        {gameState.buildings.library === 0 && (
+                                            <p className="text-sm text-yellow-400 bg-yellow-900/30 p-2 rounded border border-yellow-700">
+                                                ⚠ Build a Library to advance ages
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-green-400 font-bold text-center">🏆 MAXIMUM AGE REACHED!</p>
+                                )}
+                            </div>
+
+                            <div className="bg-gradient-to-br from-red-900/90 to-red-950/90 border-2 border-red-600 rounded-lg p-4 backdrop-blur-sm">
+                                <h2 className="text-xl font-bold mb-3 text-red-300 flex items-center gap-2">
+                                    <Sword className="w-5 h-5" />
+                                    Military Forces
+                                </h2>
+                                <div className="space-y-2">
+                                    {Object.entries(gameState.units).map(([unitType, count]) => {
+                                        if (count > 0 && unitType !== 'citizens') {
+                                            const unit = units[unitType];
+                                            return (
+                                                <div key={unitType} className="flex justify-between items-center bg-black/40 p-2 rounded border border-red-700/50">
+                                                    <span className="text-amber-300 flex items-center gap-2">
+                                                        {unit.name}s
+                                                        <span className="troop-march">⚔️</span>
+                                                    </span>
+                                                    <span className="font-bold text-red-400">{count}</span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })}
+                                    {gameState.units.soldiers === 0 && gameState.units.archers === 0 && gameState.units.cavalry === 0 && (
+                                        <p className="text-sm text-gray-400 italic text-center">No military units yet</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Workers Animation */}
+                            {showWorkers && (
+                                <div className="bg-gradient-to-br from-green-900/90 to-green-950/90 border-2 border-green-600 rounded-lg p-4 backdrop-blur-sm">
+                                    <h2 className="text-xl font-bold mb-3 text-green-300 flex items-center gap-2">
+                                        <Users className="w-5 h-5" />
+                                        Workers Active
+                                    </h2>
+                                    <div className="space-y-3">
+                                        {gameState.buildings.farm > 0 && (
+                                            <div>
+                                                <p className="text-xs text-green-400 mb-1">Farming ({gameState.buildings.farm})</p>
+                                                <AnimatedWorkers count={gameState.buildings.farm} type="farm" />
+                                            </div>
+                                        )}
+                                        {gameState.buildings.lumberMill > 0 && (
+                                            <div>
+                                                <p className="text-xs text-green-400 mb-1">Lumber ({gameState.buildings.lumberMill})</p>
+                                                <AnimatedWorkers count={gameState.buildings.lumberMill} type="lumber" />
+                                            </div>
+                                        )}
+                                        {gameState.buildings.market > 0 && (
+                                            <div>
+                                                <p className="text-xs text-green-400 mb-1">Mining ({gameState.buildings.market})</p>
+                                                <AnimatedWorkers count={gameState.buildings.market} type="mine" />
+                                            </div>
+                                        )}
+                                        {gameState.units.citizens > 0 && (
+                                            <div>
+                                                <p className="text-xs text-green-400 mb-1">Citizens ({gameState.units.citizens})</p>
+                                                <div className="flex gap-1">
+                                                    {Array.from({ length: Math.min(gameState.units.citizens, 10) }).map((_, i) => (
+                                                        <span key={i} className="worker-animated" style={{animationDelay: `${i * 0.3}s`}}>👷</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="flex gap-2 bg-stone-900/80 p-2 rounded-lg border-2 border-amber-700">
+                                {['map', 'buildings', 'units'].map(tab => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => setSelectedTab(tab)}
+                                        className={`flex-1 py-2 px-4 rounded font-bold transition-all duration-200 ${selectedTab === tab
+                                                ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white border-2 border-amber-500'
+                                                : 'bg-stone-800 text-amber-400 hover:bg-stone-700 border-2 border-stone-700'
+                                            }`}
+                                    >
+                                        {tab === 'map' && <Map className="inline w-5 h-5 mr-2" />}
+                                        {tab === 'buildings' && <Hammer className="inline w-5 h-5 mr-2" />}
+                                        {tab === 'units' && <Sword className="inline w-5 h-5 mr-2" />}
+                                        {tab.toUpperCase()}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {selectedTab === 'map' && (
+                                <div className="bg-gradient-to-br from-stone-800/90 to-stone-900/90 border-2 border-amber-700 rounded-lg p-6 backdrop-blur-sm">
+                                    <h2 className="text-2xl font-bold mb-4 text-amber-300 text-center flex items-center justify-center gap-2">
+                                        <Map className="w-6 h-6" />
+                                        Empire Map
+                                    </h2>
+                                    <MapView territory={gameState.territory} nation={nation} units={gameState.units} />
+                                    <div className="mt-4 text-center text-sm text-amber-400">
+                                        <p>Your empire controls <span className="font-bold text-amber-300">{gameState.territory}</span> provinces</p>
+                                        <p className="text-xs text-amber-500 mt-1">Expand your territory to control more land!</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedTab === 'buildings' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {Object.entries(buildings).map(([key, building]) => {
+                                        const Icon = building.Icon;
+                                        const canAfford = Object.entries(building.cost).every(
+                                            ([resource, cost]) => gameState.resources[resource] >= cost
+                                        );
+                                        const owned = gameState.buildings[key];
+
+                                        return (
+                                            <div
+                                                key={key}
+                                                className="bg-gradient-to-br from-stone-800/90 to-stone-900/90 border-2 border-amber-700 rounded-lg p-4 backdrop-blur-sm hover:border-amber-500 transition-all duration-200 building-construct"
+                                            >
+                                                <div className="flex items-start gap-3 mb-3">
+                                                    <Icon className="w-8 h-8 text-amber-400" />
+                                                    <div className="flex-1">
+                                                        <h3 className="text-lg font-bold text-amber-200">{building.name}</h3>
+                                                        <p className="text-sm text-gray-400">Owned: {owned}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2 mb-3">
+                                                    <div className="text-sm">
+                                                        <span className="text-amber-500 font-semibold">Cost: </span>
+                                                        {Object.entries(building.cost).map(([resource, amount], idx) => (
+                                                            <span key={resource} className={gameState.resources[resource] < amount ? 'text-red-400' : 'text-green-400'}>
+                                                                {idx > 0 && ', '}
+                                                                {amount} {resource}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                    {Object.entries(building.produces).length > 0 && (
+                                                        <div className="text-sm">
+                                                            <span className="text-amber-500 font-semibold">Produces: </span>
+                                                            {Object.entries(building.produces).map(([resource, amount], idx) => (
+                                                                <span key={resource} className="text-blue-400">
+                                                                    {idx > 0 && ', '}
+                                                                    +{amount} {resource}/sec
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <button
+                                                    onClick={() => buildBuilding(key)}
+                                                    disabled={!canAfford}
+                                                    className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded border-2 border-green-800 disabled:border-gray-800 transition-all duration-200 transform hover:scale-105 disabled:scale-100"
+                                                >
+                                                    🔨 Build {building.name}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {selectedTab === 'units' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {Object.entries(units).map(([key, unit]) => {
+                                        const Icon = unit.Icon;
+                                        const canAfford = Object.entries(unit.cost).every(
+                                            ([resource, cost]) => gameState.resources[resource] >= cost
+                                        );
+                                        const hasPopCap = gameState.population.current < gameState.population.max;
+                                        const owned = gameState.units[key];
+
+                                        let canTrain = canAfford && hasPopCap;
+                                        let requirementText = '';
+                                        if (key !== 'citizens' && gameState.buildings.barracks === 0) {
+                                            canTrain = false;
+                                            requirementText = 'Requires Barracks';
+                                        }
+
+                                        return (
+                                            <div
+                                                key={key}
+                                                className="bg-gradient-to-br from-red-900/80 to-red-950/80 border-2 border-red-700 rounded-lg p-4 backdrop-blur-sm hover:border-red-500 transition-all duration-200"
+                                            >
+                                                <div className="flex items-start gap-3 mb-3">
+                                                    <Icon className="w-8 h-8 text-red-400" />
+                                                    <div className="flex-1">
+                                                        <h3 className="text-lg font-bold text-red-200">{unit.name}</h3>
+                                                        <p className="text-sm text-gray-400">Count: {owned}</p>
+                                                        {unit.strength && (
+                                                            <p className="text-sm text-amber-400">⚔ Strength: {unit.strength}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2 mb-3">
+                                                    <div className="text-sm">
+                                                        <span className="text-red-400 font-semibold">Cost: </span>
+                                                        {Object.entries(unit.cost).map(([resource, amount], idx) => (
+                                                            <span key={resource} className={gameState.resources[resource] < amount ? 'text-red-400' : 'text-green-400'}>
+                                                                {idx > 0 && ', '}
+                                                                {amount} {resource}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                    {!hasPopCap && (
+                                                        <p className="text-sm text-yellow-400">⚠ Population cap reached!</p>
+                                                    )}
+                                                    {requirementText && (
+                                                        <p className="text-sm text-yellow-400">⚠ {requirementText}</p>
+                                                    )}
+                                                </div>
+
+                                                <button
+                                                    onClick={() => trainUnit(key)}
+                                                    disabled={!canTrain}
+                                                    className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded border-2 border-red-800 disabled:border-gray-800 transition-all duration-200 transform hover:scale-105 disabled:scale-100"
+                                                >
+                                                    ⚔️ Train {unit.name}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Game Controls */}
+                    <div className="fixed bottom-4 right-4 space-y-2">
+                        <div className="bg-stone-900/95 border-2 border-amber-600 rounded-lg p-3 backdrop-blur-sm">
+                            <p className="text-xs text-amber-500 mb-2">GAME SPEED</p>
+                            <div className="flex gap-2">
+                                {[0.5, 1, 2, 3].map(speed => (
+                                    <button
+                                        key={speed}
+                                        onClick={() => setGameState(prev => ({ ...prev, gameSpeed: speed }))}
+                                        className={`px-3 py-1 rounded font-bold transition-all ${gameState.gameSpeed === speed
+                                                ? 'bg-amber-600 text-white'
+                                                : 'bg-stone-700 text-amber-400 hover:bg-stone-600'
+                                            }`}
+                                    >
+                                        {speed}x
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <button
+                            onClick={toggleSound}
+                            className={`w-full px-4 py-2 rounded font-bold transition-all ${gameState.soundEnabled
+                                    ? 'bg-green-600 hover:bg-green-500'
+                                    : 'bg-gray-600 hover:bg-gray-500'
+                                } text-white border-2`}
+                        >
+                            {gameState.soundEnabled ? '🔊 Sound ON' : '🔇 Sound OFF'}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<RiseOfNationsGame />);
+    </script>
+</body>
+</html>
