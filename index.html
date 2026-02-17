@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rise of Empires – RTS</title>
+    <style>
+        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+        body { background: #0a0f0a; overflow: hidden; width:100vw; height:100vh; }
+        #game-canvas { display:block; cursor:default; }
+        #loading {
+            position:fixed; inset:0; background:#0a0f0a;
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:center;
+            color:#b8860b; font-family:Georgia,serif; z-index:100;
+        }
+        #loading h1 { font-size:3rem; margin-bottom:1rem; letter-spacing:4px;
+            background:linear-gradient(90deg,#b8860b,#ffd700,#b8860b);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+        #loading p  { color:#666; font-size:0.9rem; margin-bottom:2rem; }
+        .start-btn {
+            padding:14px 48px; font-size:1.1rem; font-family:Georgia,serif;
+            background:linear-gradient(135deg,#1a3a1a,#2a5a2a);
+            color:#ffd700; border:2px solid #b8860b; border-radius:4px;
+            cursor:pointer; letter-spacing:2px; transition:all 0.2s;
+        }
+        .start-btn:hover { background:linear-gradient(135deg,#2a5a2a,#3a7a3a); transform:scale(1.04); }
+        .instructions {
+            margin-top:2rem; color:#556; font-size:0.78rem;
+            text-align:center; line-height:1.9;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+
+    <div id="loading">
+        <h1>RISE OF EMPIRES</h1>
+        <p>A Real-Time Strategy Game</p>
+        <button class="start-btn" id="start-btn">⚔ BEGIN ⚔</button>
+        <div class="instructions">
+            Left-click: Select unit/building &nbsp;|&nbsp; Drag: Box select<br>
+            Right-click: Move / Attack &nbsp;|&nbsp; WASD or edge: Pan camera<br>
+            Select Village Center → Train Villager<br>
+            Select Villager → Build Farm (generates points)<br>
+            Select Villager → Build Barracks → Train Swordsman<br>
+            Swordsmen auto-attack nearby enemies<br>
+            AI sends waves every 30s — defend and destroy their base!
+        </div>
+    </div>
+
+    <script type="module">
+        import { Game } from './src/game.js';
+        document.getElementById('start-btn').addEventListener('click', () => {
+            document.getElementById('loading').style.display = 'none';
+            const canvas = document.getElementById('game-canvas');
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+            const game = new Game(canvas);
+            game.start();
+            window._game = game; // debug access
+        });
+    </script>
+</body>
+</html>

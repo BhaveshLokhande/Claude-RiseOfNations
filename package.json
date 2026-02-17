@@ -1,0 +1,16 @@
+{
+  "name": "rise-of-empires-rts",
+  "version": "1.0.0",
+  "description": "Web-based RTS game inspired by Rise of Nations",
+  "type": "module",
+  "scripts": {
+    "dev":   "npx serve . -p 3000",
+    "build": "echo 'No build step required - pure ES modules' && npx serve . -p 3000",
+    "start": "npx serve . -p 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.0"
+  },
+  "keywords": ["rts","game","canvas"],
+  "license": "MIT"
+}
